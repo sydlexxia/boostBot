@@ -1,0 +1,90 @@
+console.log('boostBot starting...');
+import 'dotenv/config';
+import {
+  Client,
+  GatewayIntentBits,
+  Events,
+  PermissionsBitField,
+} from 'discord.js';
+
+const client = new Client({
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMembers, // needed for guildMemberUpdate
+  ],
+});
+
+// Utility: safe role add/remove with logging
+async function setVip(member, shouldHave, logChannel) {
+  const vipRoleId = process.env.VIP_ROLE_ID;
+  if (!vipRoleId) return;
+
+  const hasRole = member.roles.cache.has(vipRoleId);
+  try {
+    if (shouldHave && !hasRole) {
+      await member.roles.add(vipRoleId, 'Started boosting');
+      if (logChannel) logChannel.send(`⭐ ${member} started boosting — VIP role added.`);
+    } else if (!shouldHave && hasRole) {
+      await member.roles.remove(vipRoleId, 'Stopped boosting');
+      if (logChannel) logChannel.send(`💤 ${member} stopped boosting — VIP role removed.`);
+    }
+  } catch (err) {
+    if (logChannel) logChannel.send(`⚠️ Role change failed for ${member}: ${err.message}`);
+    console.error(err);
+  }
+}
+
+client.once(Events.ClientReady, async () => {
+  console.log(`Logged in as ${client.user.tag}`);
+});
+
+// Set presence as 'online'
+client.once('ready', () => {
+  client.user.setPresence({
+    activities: [{ name: 'Boosting in style' }],
+    status: 'online'  // other options: 'idle', 'dnd' (do not disturb), 'invisible'
+  });
+});
+
+// Core: watch for boost start/stop
+client.on(Events.GuildMemberUpdate, async (oldMember, newMember) => {
+  // premiumSince: Date|null — when the member started boosting this guild
+  // null -> Date   : started boosting
+  // Date -> null   : stopped boosting
+  const oldBoost = oldMember.premiumSince;
+  const newBoost = newMember.premiumSince;
+
+  if (oldBoost === newBoost) return; // nothing changed
+
+  const logChannelId = process.env.LOG_CHANNEL_ID;
+  const logChannel = logChannelId
+    ? newMember.guild.channels.cache.get(logChannelId)
+    : null;
+
+  const isBoostingNow = Boolean(newBoost);
+  await setVip(newMember, isBoostingNow, logChannel);
+});
+
+// Optional: nightly reconciliation in case the bot missed events
+// (e.g., downtime). Iterates members and fixes VIP role drift.
+async function reconcileGuild(guild) {
+  const logChannelId = process.env.LOG_CHANNEL_ID;
+  const logChannel = logChannelId ? guild.channels.cache.get(logChannelId) : null;
+
+  // Fetch full member list (requires SERVER MEMBERS INTENT)
+  const members = await guild.members.fetch();
+  for (const member of members.values()) {
+    const shouldHave = Boolean(member.premiumSince);
+    await setVip(member, shouldHave, logChannel);
+  }
+}
+
+client.on(Events.ClientReady, async () => {
+  for (const [, guild] of client.guilds.cache) {
+    // stagger a bit so we don't hammer large guilds at once
+    setTimeout(() => reconcileGuild(guild).catch(console.error), 5_000);
+  }
+});
+
+client.login(process.env.DISCORD_TOKEN);
+
