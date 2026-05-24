@@ -56,10 +56,10 @@ async function setVip(member, shouldHave, logChannel) {
   try {
     if (shouldHave && !hasRole) {
       await member.roles.add(vipRoleId, 'Started boosting');
-      await safeSend(logChannel, `⭐ ${member} started boosting — VIP role added.`);
+      await safeSend(logChannel, `⭐ ${member} started boosting: VIP role added.`);
     } else if (!shouldHave && hasRole) {
       await member.roles.remove(vipRoleId, 'Stopped boosting');
-      await safeSend(logChannel, `💤 ${member} stopped boosting — VIP role removed.`);
+      await safeSend(logChannel, `💤 ${member} stopped boosting: VIP role removed.`);
     }
   } catch (err) {
     await safeSend(logChannel, `⚠️ Role change failed for ${member}: ${err.message}`);
